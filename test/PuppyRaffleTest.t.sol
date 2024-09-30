@@ -4,9 +4,11 @@ pragma experimental ABIEncoderV2;
 
 import {Test, console} from "forge-std/Test.sol";
 import {PuppyRaffle} from "../src/PuppyRaffle.sol";
+import {AttackPuppyRaffle} from "../src/AttackPuppyRaffle.sol";
 
 contract PuppyRaffleTest is Test {
     PuppyRaffle puppyRaffle;
+    AttackPuppyRaffle attack;
     uint256 entranceFee = 1e18;
     address playerOne = address(1);
     address playerTwo = address(2);
@@ -15,12 +17,11 @@ contract PuppyRaffleTest is Test {
     address feeAddress = address(99);
     uint256 duration = 1 days;
 
+    address attacker = makeAddr("attacker");
+
     function setUp() public {
-        puppyRaffle = new PuppyRaffle(
-            entranceFee,
-            feeAddress,
-            duration
-        );
+        puppyRaffle = new PuppyRaffle(entranceFee, feeAddress, duration);
+        attack = new AttackPuppyRaffle(address(puppyRaffle), attacker);
     }
 
     //////////////////////
@@ -212,5 +213,65 @@ contract PuppyRaffleTest is Test {
         puppyRaffle.selectWinner();
         puppyRaffle.withdrawFees();
         assertEq(address(feeAddress).balance, expectedPrizeAmount);
+    }
+
+    function test_denialOfService() public {
+        vm.txGasPrice(1);
+
+        // Let's enter 100 players
+        uint256 playersNum = 100;
+        address[] memory players = new address[](playersNum);
+        for (uint256 i = 0; i < playersNum; i++) {
+            players[i] = address(i);
+        }
+
+        // see how much gas it costs
+        uint256 gasStart = gasleft();
+        puppyRaffle.enterRaffle{value: entranceFee * playersNum}(players);
+        uint256 gasEnd = gasleft();
+
+        uint256 gasUsedFirst = (gasStart - gasEnd) * tx.gasprice;
+
+        console.log("Gas cost of the first 100 players", gasUsedFirst);
+
+        // now for the 2nd 100 players
+        address[] memory playersTwo = new address[](playersNum);
+        for (uint256 i = 0; i < playersNum; i++) {
+            playersTwo[i] = address(i + playersNum);
+        }
+
+        // see how much gas it costs
+        uint256 gasStartSecond = gasleft();
+        puppyRaffle.enterRaffle{value: entranceFee * playersNum}(playersTwo);
+        uint256 gasEndSecond = gasleft();
+
+        uint256 gasUsedSecond = (gasStartSecond - gasEndSecond) * tx.gasprice;
+
+        console.log("Gas cost of the 2nd 100 players", gasUsedSecond);
+
+        assert(gasUsedSecond > gasUsedFirst);
+    }
+
+    function test_reentracyRefund() public {
+        // Let's enter 15 players
+        uint256 playersNum = 15;
+        address[] memory players = new address[](playersNum);
+        for (uint256 i = 0; i < playersNum; i++) {
+            players[i] = address(i);
+        }
+
+        puppyRaffle.enterRaffle{value: entranceFee * playersNum}(players);
+        console.log("starting puppyRaffle contract balance: ", address(puppyRaffle).balance);
+
+        // Let's attack
+        hoax(attacker, entranceFee);
+        console.log("starting attacker balance: ", attacker.balance);
+        attack.attack{value: entranceFee}();
+        uint256 expectedBalance = entranceFee * playersNum + entranceFee;
+
+        // Let's see how much ETH we have now
+        console.log("ending puppyRaffle contract balance: ", address(puppyRaffle).balance);
+        console.log("ending attacker balance: ", attacker.balance);
+        assertEq(attacker.balance, expectedBalance);
     }
 }

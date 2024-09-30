@@ -22,7 +22,7 @@ contract PuppyRaffle is ERC721, Ownable {
 
     address[] public players;
 
-    // q I think these two should be constants
+    // q I think `raffleDuration` should be immutable
     uint256 public raffleDuration;
     uint256 public raffleStartTime;
 
@@ -84,13 +84,15 @@ contract PuppyRaffle is ERC721, Ownable {
     /// @param newPlayers the list of players to enter the raffle
     function enterRaffle(address[] memory newPlayers) public payable {
         // @audit We should check for duplicate addresses here
-        // @audit Instead of `require`, we can use an `if` statement returning a custom error
+        // q were custom reverts a thing in 0.7.6 of solidity?
         require(msg.value == entranceFee * newPlayers.length, "PuppyRaffle: Must send enough to enter raffle");
         for (uint256 i = 0; i < newPlayers.length; i++) {
+            // q what resets the players array?
             players.push(newPlayers[i]);
         }
 
         // Check for duplicates
+        // @audit DoS
         for (uint256 i = 0; i < players.length - 1; i++) {
             for (uint256 j = i + 1; j < players.length; j++) {
                 require(players[i] != players[j], "PuppyRaffle: Duplicate player");
@@ -102,10 +104,12 @@ contract PuppyRaffle is ERC721, Ownable {
     /// @param playerIndex the index of the player to refund. You can find it externally by calling `getActivePlayerIndex`
     /// @dev This function will allow there to be blank spots in the array
     function refund(uint256 playerIndex) public {
+        // @audit MEV
         address playerAddress = players[playerIndex];
         require(playerAddress == msg.sender, "PuppyRaffle: Only the player can refund");
         require(playerAddress != address(0), "PuppyRaffle: Player already refunded, or is not active");
 
+        // @audit Reentrancy
         payable(msg.sender).sendValue(entranceFee);
 
         players[playerIndex] = address(0);
@@ -121,6 +125,8 @@ contract PuppyRaffle is ERC721, Ownable {
                 return i;
             }
         }
+        // q what if the player is at index 0?
+        // @audit if the player is at index 0, it'll return 0 and a player might think they are not active!
         return 0;
     }
 
@@ -131,7 +137,9 @@ contract PuppyRaffle is ERC721, Ownable {
     /// @dev we reset the active players array after the winner is selected
     /// @dev we send 80% of the funds to the winner, the other 20% goes to the feeAddress
     function selectWinner() external {
+        // q were custom reverts a thing in 0.7.6 of solidity?
         require(block.timestamp >= raffleStartTime + raffleDuration, "PuppyRaffle: Raffle not over");
+        // q were custom reverts a thing in 0.7.6 of solidity?
         require(players.length >= 4, "PuppyRaffle: Need at least 4 players");
         uint256 winnerIndex =
             uint256(keccak256(abi.encodePacked(msg.sender, block.timestamp, block.difficulty))) % players.length;
@@ -157,16 +165,20 @@ contract PuppyRaffle is ERC721, Ownable {
         raffleStartTime = block.timestamp;
         previousWinner = winner;
         (bool success,) = winner.call{value: prizePool}("");
+        // q were custom reverts a thing in 0.7.6 of solidity?
         require(success, "PuppyRaffle: Failed to send prize pool to winner");
         _safeMint(winner, tokenId);
     }
 
     /// @notice this function will withdraw the fees to the feeAddress
+    // q could it lead to Reentracy?
     function withdrawFees() external {
+        // q were custom reverts a thing in 0.7.6 of solidity?
         require(address(this).balance == uint256(totalFees), "PuppyRaffle: There are currently players active!");
         uint256 feesToWithdraw = totalFees;
         totalFees = 0;
         (bool success,) = feeAddress.call{value: feesToWithdraw}("");
+        // q were custom reverts a thing in 0.7.6 of solidity?
         require(success, "PuppyRaffle: Failed to withdraw fees");
     }
 
