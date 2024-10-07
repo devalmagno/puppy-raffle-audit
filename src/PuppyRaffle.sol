@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.7.6;
+// report-written use of floating pragma is bad
+// report-written also... why are you using 0.7?
 
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
@@ -22,7 +24,9 @@ contract PuppyRaffle is ERC721, Ownable {
 
     address[] public players;
 
-    // q I think `raffleDuration` should be immutable
+    // e how long the raffle lasts
+
+    // report-written raffleDuration should be a immutable variable since it doesn't change
     uint256 public raffleDuration;
     uint256 public raffleStartTime;
 
@@ -38,19 +42,19 @@ contract PuppyRaffle is ERC721, Ownable {
     mapping(uint256 => string) public rarityToName;
 
     // Stats for the common puppy (pug)
-    // @audit it could be a constant
+    // report-written should be constant!
     string private commonImageUri = "ipfs://QmSsYRx3LpDAb1GZQm7zZ1AuHZjfbPkD6J7s9r41xu1mf8";
     uint256 public constant COMMON_RARITY = 70;
     string private constant COMMON = "common";
 
     // Stats for the rare puppy (st. bernard)
-    // @audit It could be a constant
+    // report-written should be constant!
     string private rareImageUri = "ipfs://QmUPjADFGEKmfohdTaNcWhp7VGk26h5jXDA7v3VtTnTLcW";
     uint256 public constant RARE_RARITY = 25;
     string private constant RARE = "rare";
 
     // Stats for the legendary puppy (shiba inu)
-    // @audit It could be a constant
+    // report-written should be constant!
     string private legendaryImageUri = "ipfs://QmYx6GsYAKnNzZ9A6NvEKV9nf1VaDzJrqDR23Y8YSkebLU";
     uint256 public constant LEGENDARY_RARITY = 5;
     string private constant LEGENDARY = "legendary";
@@ -64,6 +68,8 @@ contract PuppyRaffle is ERC721, Ownable {
     /// @param _feeAddress the address to send the fees to
     /// @param _raffleDuration the duration in seconds of the raffle
     constructor(uint256 _entranceFee, address _feeAddress, uint256 _raffleDuration) ERC721("Puppy Raffle", "PR") {
+        // report-written check for zero address!
+        // input validation
         entranceFee = _entranceFee;
         feeAddress = _feeAddress;
         raffleDuration = _raffleDuration;
@@ -82,51 +88,59 @@ contract PuppyRaffle is ERC721, Ownable {
     /// @notice they have to pay the entrance fee * the number of players
     /// @notice duplicate entrants are not allowed
     /// @param newPlayers the list of players to enter the raffle
+    // report-written public functions not used internally could be marked external
     function enterRaffle(address[] memory newPlayers) public payable {
-        // @audit We should check for duplicate addresses here
-        // q were custom reverts a thing in 0.7.6 of solidity?
         require(msg.value == entranceFee * newPlayers.length, "PuppyRaffle: Must send enough to enter raffle");
         for (uint256 i = 0; i < newPlayers.length; i++) {
-            // q what resets the players array?
             players.push(newPlayers[i]);
         }
 
         // Check for duplicates
-        // @audit DoS
+        // report-written DoS
+        // report-written use a local variable with length cached instead of length member of storage array
         for (uint256 i = 0; i < players.length - 1; i++) {
             for (uint256 j = i + 1; j < players.length; j++) {
                 require(players[i] != players[j], "PuppyRaffle: Duplicate player");
             }
         }
+
+        // @followup/audit if it's an empty array, we still emit an event?
         emit RaffleEnter(newPlayers);
     }
 
     /// @param playerIndex the index of the player to refund. You can find it externally by calling `getActivePlayerIndex`
     /// @dev This function will allow there to be blank spots in the array
+    // report-written public functions not used internally could be marked external
     function refund(uint256 playerIndex) public {
-        // @audit MEV
+        // written-skipped MEV
         address playerAddress = players[playerIndex];
         require(playerAddress == msg.sender, "PuppyRaffle: Only the player can refund");
         require(playerAddress != address(0), "PuppyRaffle: Player already refunded, or is not active");
 
-        // @audit Reentrancy
+        // report-written Reentrancy
         payable(msg.sender).sendValue(entranceFee);
 
         players[playerIndex] = address(0);
+        // report-written
+        // If an event can be manipulated
+        // An event is missing
+        // An event is wrong
         emit RaffleRefunded(playerAddress);
     }
 
     /// @notice a way to get the index in the array
     /// @param player the address of a player in the raffle
     /// @return the index of the player in the array, if they are not active, it returns 0
+    // IMPACT: Medium/Low
+    // LIKELIHOOD: Low/High
+    // Severify: Low
     function getActivePlayerIndex(address player) external view returns (uint256) {
         for (uint256 i = 0; i < players.length; i++) {
             if (players[i] == player) {
                 return i;
             }
         }
-        // q what if the player is at index 0?
-        // @audit if the player is at index 0, it'll return 0 and a player might think they are not active!
+        // report-written if the player is at index 0, it'll return 0 and a player might think they are not active!
         return 0;
     }
 
@@ -137,21 +151,42 @@ contract PuppyRaffle is ERC721, Ownable {
     /// @dev we reset the active players array after the winner is selected
     /// @dev we send 80% of the funds to the winner, the other 20% goes to the feeAddress
     function selectWinner() external {
-        // q were custom reverts a thing in 0.7.6 of solidity?
+        // @audit-info recomendation: mint should be called before transferring funds to ensure state consistency
         require(block.timestamp >= raffleStartTime + raffleDuration, "PuppyRaffle: Raffle not over");
-        // q were custom reverts a thing in 0.7.6 of solidity?
         require(players.length >= 4, "PuppyRaffle: Need at least 4 players");
+
+        // @audit randomness
+        // fixes: Chainlink VRF, Commit Reveal Scheme
         uint256 winnerIndex =
             uint256(keccak256(abi.encodePacked(msg.sender, block.timestamp, block.difficulty))) % players.length;
         address winner = players[winnerIndex];
+
+        // @audit-info why not just do address(this).balance?
         uint256 totalAmountCollected = players.length * entranceFee;
+
+        // @audit-info Magic numbers
+        // uint256 public constant PRICE_POOL_PERCENTENGE = 80;
+        // uint256 public constant POOL_PRECISION = 100;
         uint256 prizePool = (totalAmountCollected * 80) / 100;
+        // @audit-info it's better to do `totalAmountCollected - prizePool`
+        // uint256 fee = totalAmountCollected - prizePool;
         uint256 fee = (totalAmountCollected * 20) / 100;
+        // e this is the total fees the owner should be able to collect
+        // @audit overflow
+        // Fixes: Newer version of solidity, bigger uints
+        // 18.446744073709551615
+        // @audit unsafe cast of uint256 to uint64
+        // @audit-info State variable changes but no event is emitted
         totalFees = totalFees + uint64(fee);
 
+        // e when we mint a new puppy NFT, we use the totalSupply as the tokenId
         uint256 tokenId = totalSupply();
 
         // We use a different RNG calculate from the winnerIndex to determine rarity
+        // @audit randomness
+
+        // @audit people can revert the TX till they win
+        // @audit-info State variable changes but no event is emitted
         uint256 rarity = uint256(keccak256(abi.encodePacked(msg.sender, block.difficulty))) % 100;
         if (rarity <= COMMON_RARITY) {
             tokenIdToRarity[tokenId] = COMMON_RARITY;
@@ -161,24 +196,31 @@ contract PuppyRaffle is ERC721, Ownable {
             tokenIdToRarity[tokenId] = LEGENDARY_RARITY;
         }
 
-        delete players;
-        raffleStartTime = block.timestamp;
-        previousWinner = winner;
+        delete players; // e resetting the players array
+        // @audit-info State variable changes but no event is emitted
+        raffleStartTime = block.timestamp; // e resetting the raffle start time
+        // @audit-info State variable changes but no event is emitted
+        previousWinner = winner; // e vanity, doesn't matter much
+
+        // q can we reenter somewhere?
+        // @audit the winner wouldn't get the money if their fallback was messed up!
         (bool success,) = winner.call{value: prizePool}("");
-        // q were custom reverts a thing in 0.7.6 of solidity?
         require(success, "PuppyRaffle: Failed to send prize pool to winner");
+        // @audit mint should be called before transferring funds to ensure state consistency
         _safeMint(winner, tokenId);
     }
 
     /// @notice this function will withdraw the fees to the feeAddress
-    // q could it lead to Reentracy?
     function withdrawFees() external {
-        // q were custom reverts a thing in 0.7.6 of solidity?
+        // ....?
+        // @audit it is difficult to withdraw fees if their are players (MEV)
+        // @audit mishandling ETH!!!
         require(address(this).balance == uint256(totalFees), "PuppyRaffle: There are currently players active!");
         uint256 feesToWithdraw = totalFees;
         totalFees = 0;
+
+        // slither-disable-next-line arbitrary-send-eth
         (bool success,) = feeAddress.call{value: feesToWithdraw}("");
-        // q were custom reverts a thing in 0.7.6 of solidity?
         require(success, "PuppyRaffle: Failed to withdraw fees");
     }
 
@@ -186,10 +228,15 @@ contract PuppyRaffle is ERC721, Ownable {
     /// @param newFeeAddress the new address to send fees to
     function changeFeeAddress(address newFeeAddress) external onlyOwner {
         feeAddress = newFeeAddress;
+        // @audit are we missing events?
         emit FeeAddressChanged(newFeeAddress);
     }
 
     /// @notice this function will return true if the msg.sender is an active player
+    // @audit this isn't used anywhere?
+    // IMPACT: None
+    // LIKELIHOOD: None
+    // ...but it's a waste of gas I/G
     function _isActivePlayer() internal view returns (bool) {
         for (uint256 i = 0; i < players.length; i++) {
             if (players[i] == msg.sender) {
