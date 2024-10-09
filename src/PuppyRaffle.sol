@@ -151,42 +151,42 @@ contract PuppyRaffle is ERC721, Ownable {
     /// @dev we reset the active players array after the winner is selected
     /// @dev we send 80% of the funds to the winner, the other 20% goes to the feeAddress
     function selectWinner() external {
-        // @audit-info recomendation: mint should be called before transferring funds to ensure state consistency
+        // report-written recomendation: mint should be called before transferring funds to ensure state consistency
         require(block.timestamp >= raffleStartTime + raffleDuration, "PuppyRaffle: Raffle not over");
         require(players.length >= 4, "PuppyRaffle: Need at least 4 players");
 
-        // @audit randomness
+        // report-written randomness
         // fixes: Chainlink VRF, Commit Reveal Scheme
+        // IMPACT: HIGH
+        // LIKELIHOOD: HIGH
         uint256 winnerIndex =
             uint256(keccak256(abi.encodePacked(msg.sender, block.timestamp, block.difficulty))) % players.length;
         address winner = players[winnerIndex];
 
-        // @audit-info why not just do address(this).balance?
+        // report-skipped why not just do address(this).balance?
         uint256 totalAmountCollected = players.length * entranceFee;
 
-        // @audit-info Magic numbers
+        // report-written Magic numbers
         // uint256 public constant PRICE_POOL_PERCENTENGE = 80;
         // uint256 public constant POOL_PRECISION = 100;
         uint256 prizePool = (totalAmountCollected * 80) / 100;
-        // @audit-info it's better to do `totalAmountCollected - prizePool`
+        // report-written it's better to do `totalAmountCollected - prizePool`
         // uint256 fee = totalAmountCollected - prizePool;
         uint256 fee = (totalAmountCollected * 20) / 100;
         // e this is the total fees the owner should be able to collect
-        // @audit overflow
+        // @report-written overflow
         // Fixes: Newer version of solidity, bigger uints
         // 18.446744073709551615
-        // @audit unsafe cast of uint256 to uint64
-        // @audit-info State variable changes but no event is emitted
+        // report-skipped unsafe cast of uint256 to uint64
+        // IMPACT: HIGH
+        // LIKELIHOOD: MEDIUM
         totalFees = totalFees + uint64(fee);
 
         // e when we mint a new puppy NFT, we use the totalSupply as the tokenId
         uint256 tokenId = totalSupply();
 
         // We use a different RNG calculate from the winnerIndex to determine rarity
-        // @audit randomness
-
-        // @audit people can revert the TX till they win
-        // @audit-info State variable changes but no event is emitted
+        // report-written randomness
         uint256 rarity = uint256(keccak256(abi.encodePacked(msg.sender, block.difficulty))) % 100;
         if (rarity <= COMMON_RARITY) {
             tokenIdToRarity[tokenId] = COMMON_RARITY;
@@ -197,24 +197,24 @@ contract PuppyRaffle is ERC721, Ownable {
         }
 
         delete players; // e resetting the players array
-        // @audit-info State variable changes but no event is emitted
         raffleStartTime = block.timestamp; // e resetting the raffle start time
-        // @audit-info State variable changes but no event is emitted
         previousWinner = winner; // e vanity, doesn't matter much
 
         // q can we reenter somewhere?
-        // @audit the winner wouldn't get the money if their fallback was messed up!
+        // report-written the winner wouldn't get the money if their fallback was messed up!
+        // IMPACT: Medium
+        // LIKELIHOOD: Low
         (bool success,) = winner.call{value: prizePool}("");
         require(success, "PuppyRaffle: Failed to send prize pool to winner");
-        // @audit mint should be called before transferring funds to ensure state consistency
+        // report-written mint should be called before transferring funds to ensure state consistency
         _safeMint(winner, tokenId);
     }
 
     /// @notice this function will withdraw the fees to the feeAddress
     function withdrawFees() external {
         // ....?
-        // @audit it is difficult to withdraw fees if their are players (MEV)
-        // @audit mishandling ETH!!!
+        // report-skipped it is difficult to withdraw fees if their are players (MEV)
+        // report-written mishandling ETH!!!
         require(address(this).balance == uint256(totalFees), "PuppyRaffle: There are currently players active!");
         uint256 feesToWithdraw = totalFees;
         totalFees = 0;
@@ -228,12 +228,12 @@ contract PuppyRaffle is ERC721, Ownable {
     /// @param newFeeAddress the new address to send fees to
     function changeFeeAddress(address newFeeAddress) external onlyOwner {
         feeAddress = newFeeAddress;
-        // @audit are we missing events?
+        // @report-skipped are we missing events?
         emit FeeAddressChanged(newFeeAddress);
     }
 
     /// @notice this function will return true if the msg.sender is an active player
-    // @audit this isn't used anywhere?
+    // @report-written this isn't used anywhere?
     // IMPACT: None
     // LIKELIHOOD: None
     // ...but it's a waste of gas I/G

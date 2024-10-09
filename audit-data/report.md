@@ -1,4 +1,119 @@
-## Highs
+---
+title: PuppyRaffle Audit Report
+author: devalmagno
+date: Octuber 3, 2024
+header-includes:
+  - \usepackage{titling}
+  - \usepackage{graphicx}
+---
+
+\begin{titlepage}
+\centering
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.5\textwidth]{logo.pdf}
+\end{figure}
+\vspace{2cm}
+{\Huge\bfseries Protocol Audit Report\par}
+\vspace{1cm}
+{\Large Version 1.0\par}
+\vspace{2cm}
+{\Large\itshape github.com/devalmagno\par}
+\vfill
+{\large \today\par}
+\end{titlepage}
+
+\maketitle
+
+<!-- Your report starts here! -->
+
+Prepared by: [Lucio](https://github.com/devalmagno)
+Lead Security Researcher:
+
+- devalmagno
+
+# Table of Contents
+
+- [Table of Contents](#table-of-contents)
+- [Protocol Summary](#protocol-summary)
+- [Disclaimer](#disclaimer)
+- [Risk Classification](#risk-classification)
+- [Audit Details](#audit-details)
+  - [Scope](#scope)
+  - [Roles](#roles)
+- [Executive Summary](#executive-summary)
+  - [Issues found](#issues-found)
+- [Findings](#findings)
+- [High](#high)
+- [Medium](#medium)
+- [Low](#low)
+- [Gas](#gas)
+- [Informational](#informational)
+
+# Protocol Summary
+
+PasswordStore is a protocol dedicated to storage and retrieval of a user's passwords. The protocol is designed to be used by a single user, and is not designed to be used by multiple users. Only the owner should be able to set and access this password.
+
+# Disclaimer
+
+The Devalmagno team makes all effort to find as many vulnerabilities in the code in the given time period, but holds no responsibilities for the findings provided in this document. A security audit by the team is not an endorsement of the underlying business or product. The audit was time-boxed and the review of the code was solely on the security aspects of the Solidity implementation of the contracts.
+
+# Risk Classification
+
+|            |        | Impact |        |     |
+| ---------- | ------ | ------ | ------ | --- |
+|            |        | High   | Medium | Low |
+|            | High   | H      | H/M    | M   |
+| Likelihood | Medium | H/M    | M      | M/L |
+|            | Low    | M      | M/L    | L   |
+
+We use the [CodeHawks](https://docs.codehawks.com/hawks-auditors/how-to-evaluate-a-finding-severity) severity matrix to determine severity. See the documentation for more details.
+
+# Audit Details
+
+** The findings described in this document correspond the following commit hash: **
+
+```
+  2a47715b30cf11ca82db148704e67652ad679cd8
+```
+
+## Scope
+
+- In Scope:
+
+```
+./src/
+#-- PuppyRaffle.sol
+```
+
+- Solc Version: 0.7.6
+- Chain(s) to deploy contract to: Ethereum
+
+## Roles
+
+- Owner: Deployer of the protocol, has the power to change the wallet address to which fees are sent through the changeFeeAddress function.
+- Player: Participant of the raffle, has the power to enter the raffle with the enterRaffle function and refund value through refund function.
+
+# Executive Summary
+
+_Add some notes about how the audit went, types of things you found, etc._
+
+_We spent X hours with Z auditors using Y tools. etc._
+
+## Issues found
+
+| Security | Number of issues found |
+| -------- | ---------------------- |
+| High     | 5                      |
+| Medium   | 2                      |
+| Low      | 1                      |
+| Gas      | 3                      |
+| Info     | 7                      |
+| Total    | 18                     |
+
+# Findings
+
+## High
 
 ### [H-1] Reentracy attack in `PuppyRaffle::refund` allows entrant to drain raffle balance.
 
@@ -295,7 +410,7 @@ Instead of checking if the contract's balance equals totalFees, ensure the check
 +   require(address(this).balance >= uint256(totalFees), "PuppyRaffle: Insufficient balance to withdraw fees!");
 ```
 
-## Mediums
+## Medium
 
 ### [M-1] Looping through players array to check for duplicates in `PuppyRaffle::enterRaffle` is a potential denial of service (DoS) attack, incremeting gas costs for future entrants
 

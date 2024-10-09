@@ -276,10 +276,11 @@ contract PuppyRaffleTest is Test {
         assertEq(attacker.balance, expectedBalance);
     }
 
-    function test_overflowSelectWinner() public {
+    function test_totalFeesOverflow() public {
         // Let's enter 100 players
         uint256 playersNum = 100;
         uint256 expectedTotalFees = ((entranceFee * playersNum) * 20) / 100;
+        // 20000000000000000000
         address[] memory players = new address[](playersNum);
         for (uint256 i = 0; i < playersNum; i++) {
             players[i] = address(i);
@@ -295,7 +296,7 @@ contract PuppyRaffleTest is Test {
         console.log("expected total fees: ", expectedTotalFees);
         console.log("ending total fees: ", endingTotalFees);
 
-        assert(expectedTotalFees > endingTotalFees);
+        assertGt(expectedTotalFees, endingTotalFees);
     }
 
     function test_getActivePlayerWhenIndexIsZero() public {
@@ -323,6 +324,28 @@ contract PuppyRaffleTest is Test {
 
         vm.expectRevert();
         puppyRaffle.selectWinner();
+    }
+
+    function test_withdrawFeesRevertsDueToMishandlingOfEth() public {
+        uint256 playersNum = 100;
+        address[] memory players = new address[](100);
+        for (uint256 i = 0; i < playersNum; i++) {
+            players[i] = address(i);
+        }
+        puppyRaffle.enterRaffle{value: entranceFee * playersNum}(players);
+
+        vm.warp(block.timestamp + duration + 1);
+        vm.roll(block.number + 1);
+
+        puppyRaffle.selectWinner();
+
+        address[] memory playersTwo = new address[](1);
+        playersTwo[0] = address(1);
+
+        puppyRaffle.enterRaffle{value: entranceFee}(playersTwo);
+
+        vm.expectRevert("PuppyRaffle: There are currently players active!");
+        puppyRaffle.withdrawFees();
     }
 }
 
